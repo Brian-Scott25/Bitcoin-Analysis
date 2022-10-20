@@ -1,0 +1,276 @@
+---
+title: "Multivariable_OLS"
+author: Brian Scott
+output: github_document
+---
+
+## R MarkDown Description
+
+This markdown uses the LM_DIAGNOSTIC Function and additional code to evaluate an OLS Model. In this case we are intending to predict BTC's closing price and direction one week in the future. 
+
+```{r Data Import, message=FALSE, warning=FALSE, include=FALSE}
+library(readxl)
+FullLagLogDFMasked <- read_excel("F:/Summer2022/FullLagLogDFMasked.xlsx", 
+     col_types = c("date", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric", "numeric", "numeric", 
+         "numeric"))
+DF <- FullLagLogDFMasked
+```
+
+## LM DIAGNOSTIC Function
+This function adds a heteroscedasticity test, autocorrelation test, and a multicollinearity test to the standard R summary statistics. This function can also be found in my R_Functions GitHub Repository and that repository includes a full explanation of the function's output.
+
+```{r LM_DIAGNOSTIC Function, message=FALSE, warning=FALSE, include=FALSE}
+LM_DIAGNOSTIC <- function(df, yVar, xVars){
+  
+  require(car)
+  require(gridExtra)
+  
+  #Create Y variable for regression model
+  depV <- paste(yVar, "~")
+  
+  #create X variable string for regression model
+  indepV <- paste(xVars, collapse = " + ")
+  
+  #Combine to form the full model
+  formula <- paste(depV, indepV)
+  
+  #Run regression model
+  regM <- lm(formula, data = df)
+  
+  #Collect P Values and coefficients and make a dataframe
+  pcValues <- data.frame(summary(regM)$coefficients[,1],summary(regM)$coefficients[,4])
+  names(pcValues)[1] <- "Estimate"
+  names(pcValues)[2] <- "P Value"
+  pcValues$VarSig <- ifelse(pcValues$`P Value` < .05, "True", "False")
+  
+  #Multicollinearity Test, VIF Values as a dataframe
+  vifDF <- data.frame(car::vif(regM))
+  names(vifDF)[1] <- "VIF"
+  vifDF$NoMulticollinearity <- ifelse(vifDF$VIF < 5, "True", "False")
+  
+  #Summary Table for Variables
+  variableSummary <- merge(pcValues,vifDF, by = 'row.names', all = TRUE)
+  names(variableSummary)[1] <- "Model Variables"
+  variableSummary <<- variableSummary
+  
+  #Adjusted R Square as dataframe
+  adjR <- data.frame(summary(regM)$adj.r.squared)
+  names(adjR)[1] <- "Adjusted R Square"
+  row.names(adjR)[1] <- "Model Fit"
+  
+  #creates a new column that states the strength of the RSquare
+  adjR$ModelExplanation <- ifelse(adjR$`Adjusted R Square` > .9, "Strong Explanation", 
+                                  ifelse(adjR$`Adjusted R Square` > .75, "Moderate Explanation",
+                                         ifelse(adjR$`Adjusted R Square` > .5, "Weak Explanation", "Insignificant Explanation" )))
+ 
+  
+  #Autocorrelation Test, Durbin Watson as dataframe
+  dw <- car::durbinWatsonTest(regM)
+  dwStat <- data.frame(dw$dw)
+  names(dwStat)[1] <- "Durbin Watson Stat"
+  row.names(dwStat)[1] <- "Autocorrelation Info"
+  
+  #creates a column that states if the durbin watson test indicates autocorrelation 
+  dwStat$Autocorrelation <- ifelse(dwStat$`Durbin Watson Stat` < 1.8 || dwStat$`Durbin Watson Stat` > 2.2, "True", "False")
+ 
+  
+  #Extract FStats and make dataframe
+  fstat <- summary(regM)$fstatistic[1]
+  predictVars <- summary(regM)$fstatistic[2]
+  degreesFreedom <- summary(regM)$fstatistic[3]
+  modelPValue <- pf(fstat,predictVars,degreesFreedom, lower.tail=F)
+ 
+  fStatTable <- data.frame(fstat,predictVars,degreesFreedom,modelPValue)
+  names(fStatTable)[1] <- "F Statistic"
+  names(fStatTable)[2] <- "Number of Variables"
+  names(fStatTable)[3] <- "Degrees of Freedom"
+  names(fStatTable)[4] <- "F Statistic- PValue"
+  
+  #Extract Residual Standard Error as dataframe
+  rse <- data.frame(summary(regM)$sigma)
+  names(rse)[1] <- "Residual Standard Error"
+  
+  #Table for general model diagnostics
+  modelSummary <- merge(dwStat,adjR)
+  modelSummary <- merge(modelSummary,fStatTable)
+  modelSummary <- merge(modelSummary,rse)
+  row.names(modelSummary)[1] <- "General Model Diagnostics"
+  modelSummary <<- modelSummary
+  
+  modelSummary <- t(modelSummary)
+  
+  vs <- gridExtra::tableGrob(variableSummary)
+  ms <- gridExtra::tableGrob(modelSummary)
+  
+  gridExtra::grid.arrange(vs,ms)
+  
+  #Residuals Histogram, Check for approximately normal distribution in errors
+  hist(residuals(regM), col ="steelblue")
+  
+  #Fitted vs Residual Plot, Normal QQ plot, Scale-Location Plot, Residuals vs Leverage Plot
+  par(mfrow=c(2,2))
+  plot(regM)
+}
+
+```
+```{r LM_DIAGNOSTIC FUNCTION Results}
+LM_DIAGNOSTIC(DF, "var1_log", c("var3_log_Lag", "var4_log_Lag", "var12_log_Lag"))
+```
+
+## LM DIAGNOSTIC Result Interpretation
+
+### Evaluation Points
+
+#### Model/Variable Significance
+All variable p-values are well below .05, indicating significance.The model overall has a very small FStat-PValue and is significant as well.
+
+#### Adjusted R Square
+The adjusted R Square is .97722. Indicating a very strong model fit.
+
+#### Multicollinearity
+The VIF values are all around 1, indicating no multicollinearity.
+
+#### Heteroscedicity 
+The fitted vs residual plot shows no obvious changes in residual variance across the plot. For now I will conclude homoscedastic residuals, although plots can be misleading.
+
+#### Normally Distributed Residuals
+The residual histogram is skewed to the right, but shows that the residuals are generally normally distributed. This is backed up by the Q-Q plot. 
+
+#### Autocorrelation
+The durbin watson statistic is 1.71, indicating a small degree of negative autocorrelation. In my experience 1.71 is a reasonably strong DW-Stat for time series data. 
+
+#### Outliers
+The Residuals vs Leverage plot has observation 24 very close to the Cooks' Distance line. Technically it passes the Cooks' Distance test, but that observation should be evaluated further. 
+
+#### Endogeneity Concerns
+This should always be examined before even running a model, and this is hard to confirm considering the variables are masked. None of the variables directly effect any other variable in the model, so endogeneity is no concern.
+
+### LM DIAGNOSTIC Conclusion
+The model is very strong with only two issues, there is a small degree of negative autocorrelation and there are some potential outliers. 
+
+## Holdout Testing
+The code below evaluates the accuracy of the model over varying hold out samples. The samples are randomly generated and they change over every iteration. In this case there are 50 iterations. The results capture the predicted direction accuracy and the point estimate accuracy. The results are in percentage terms. A value of .1 indcatesI created a function for this, but it is only works with the specified variables I have. I intend to update the function to work with any specified variables.
+
+```{r Hold Out Test Function, message=FALSE, }
+set.seed(100)
+LM_HOLD_OUT_TEST <- function(df, yVar, xVars, testSize){
+  D <- na.omit(df)
+  
+  require(dplyr)
+  
+  #Create Y variable for regression model
+  depV <- paste(yVar, "~")
+  
+  #create X variable string for regression model
+  indepV <- paste(xVars, collapse = " + ")
+  
+  #Combine to form the full model
+  formulaReg <- paste(depV, indepV)
+  
+  
+  #while loop starting point
+  iteration <- 1
+  #while loop ending point
+  amt <- testSize
+  
+  #table to collect loop results
+  loopTestDataFrame <- data.frame(matrix(ncol = 4, nrow = 0))
+  #colnames for table
+  colnames(loopTestDataFrame) <- c("AVG_PCT_E", "MAX_PCT_E", "MIN_PCT_E", "Correct_Dir_PCT" )
+  
+  while(iteration <= amt){
+    #create train and test samples
+    #sample is approximately 80% of the data, and it does not have to be in consecutive order.
+    sample <- sample(c(TRUE,FALSE), nrow(D), replace = TRUE, prob = c(.8,.2))
+    train <- D[sample, ]
+    test <- D[!sample,]
+    
+    #create regression based on train sample
+    regTrain <- lm(formulaReg, data = train)
+    
+    #create predictions for the test data based on the training regression model
+    predictions <- regTrain %>% predict(test)
+    
+    #calculate percentage error
+    errorPCT <- ((test$var1_log - predictions)/ test$var1_log) * 100
+    
+    #Calculate if the prediction was in the right direction as the actual direction change
+    realDir <- test$var1_log - test$var1_log_Lag
+    predDir <- test$var1_log_Lag - predictions
+    signPD <- sign(predDir)
+    signRD <- sign(realDir)
+    correctDir <- signPD * signRD
+    
+    #find the average correct direction
+    x <- sum(correctDir >0 )
+    y <- nrow(test)
+    correctDIRPCT <- (x/y)*100
+    
+    #make vector of the metrics  to be added to the loopTestDataFrame
+    meanEPCT <- mean(errorPCT)
+    maxEPCT <- max(errorPCT)
+    minEPCT <- min(errorPCT)
+    iterationSummary <- c(meanEPCT,maxEPCT,minEPCT,correctDIRPCT)
+    
+    #combine the vector to the dataframe
+    loopTestDataFrame <- rbind(loopTestDataFrame,iterationSummary)
+    colnames(loopTestDataFrame) <- c("AVG_PCT_E", "MAX_PCT_E", "MIN_PCT_E", "Correct_Dir_PCT" )
+    iteration = iteration +1
+  }
+  #Loop Summaries
+  lDF <- loopTestDataFrame
+  #summary table of the error averages over entire loop cycle
+  errorDescriptivesTbl <- data.frame(AVG_E = round(mean(lDF$AVG_PCT_E),4), AVG_MAX_E = round(mean(lDF$MAX_PCT_E),4), AVG_MIN_E = round(mean(lDF$MIN_PCT_E),4) )
+  
+  #summary table of the direction stats over entire loop
+  directionDescriptivesTbl <- data.frame(AVG_Dir_Correct = round(mean(lDF$Correct_Dir_PCT),4), MAX_Correct_PCT = round(max(lDF$Correct_Dir_PCT),4), MIN_Correct_PCT = round(min(lDF$Correct_Dir_PCT),4))
+  
+  #combined accuracy and direction table
+  fullLoopDescriptives <- cbind(errorDescriptivesTbl,directionDescriptivesTbl)
+  row.names(fullLoopDescriptives) <- c("Row")
+  print(fullLoopDescriptives, right = FALSE)
+}
+LM_HOLD_OUT_TEST(DF,"var1_log", c("var3_log_Lag", "var4_log_Lag", "var12_log_Lag"), 50)
+```
+## Hold Out Test Results
+The average percentage error is minuscule but we are only catching the correct direction 52% of the time. The average ranges from -3.817 to 3.533%. The model seems to be working strongly in terms of percentage error, but if the direction is off then investment using this method is risky. Deeper analysis is needed to determine how the percentage error can be so small and not catch the direction. 
+
+
