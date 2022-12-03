@@ -15,7 +15,7 @@ The goal of this model is to determine BTC's closing price one week in the futur
 
 The OLS Prediction results indicate a very high accuracy, but it does not catch the directional change very well. Which means the model is insufifient for practical use. As stated above, this seems to be another indication that OLS is the wrong approach for this project. 
 
-Additonally, I have not tested for overfitting. This could be the reason the model is working unexpectedly. 
+Additonally, I have not tested for overfitting. This could be the reason the model is working unexpectedly. Fit testing can be done by comparing the model prediction accuracy for the test data and the train data. If there is a substantial difference in the train set accuracy and the test set accuracy then the model has been fitted incorrectly. Fitting issues can be addressed in many ways and it can depend on the model. Ridge, Net Elastic, and Lasso regressions apply shrinkage constraints that can reduce the independent variable amount, and reduce fitting issues. Additonally, another feature reduction technique that is highly regarded is Principle Component Analysis (PCA). Varitions of the train and test sample size can help fittinng issues too. When the training accuracy is significantly higher than the test set accuracy, the modeler can try to reduce the train set sample size to reduce overfitting liklihood. 
 
 
 #### RPubs Link: https://rpubs.com/BrianScott/959165
